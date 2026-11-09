@@ -1,10 +1,12 @@
 # Painel Comercial · Grão Norte Distribuidora
 
+[![CI](https://github.com/EduardoTorres92/painel-comercial/actions/workflows/ci.yml/badge.svg)](https://github.com/EduardoTorres92/painel-comercial/actions/workflows/ci.yml)
+
 **Faturamento, meta e ritmo de vendas em uma tela só, atualizado a partir dos dados do ERP.**
 
 > Projeto de portfólio. A Grão Norte Distribuidora é fictícia e todos os números foram gerados por um script, com padrões realistas de sazonalidade, crescimento, mix de produtos e devoluções.
 
-🔗 **Demo:** _link da Netlify_ · 📱 funciona no celular · 🌙 tema claro e escuro
+🔗 **Demo:** [painel-comercial-demo.netlify.app](https://painel-comercial-demo.netlify.app/) · 📱 funciona no celular · 🌙 tema claro e escuro
 
 ![Painel comercial no tema claro](docs/painel-claro.png)
 
