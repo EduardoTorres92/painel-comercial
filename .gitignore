@@ -1,0 +1,14 @@
+# Gerados pelo pipeline
+data/
+web/public/data/
+
+# Dependências e build
+node_modules/
+web/dist/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+.netlify/
+.DS_Store
