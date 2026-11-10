@@ -3,7 +3,7 @@ import type { Resumo } from "../lib/calculos";
 import { moedaCompacta, moedaCompleta, numero, percentual, variacaoTexto } from "../lib/formatos";
 import { Icone } from "./base";
 
-function Delta({ valor, rotulo, maiorEhMelhor = true }: { valor: number | null; rotulo: string; maiorEhMelhor?: boolean }) {
+export function Delta({ valor, rotulo, maiorEhMelhor = true }: { valor: number | null; rotulo: string; maiorEhMelhor?: boolean }) {
   if (valor === null) return null;
   const subiu = valor >= 0;
   const classe = Math.abs(valor) < 0.05 ? "neutro" : subiu === maiorEhMelhor ? "bom" : "ruim";
@@ -56,6 +56,9 @@ export function Indicadores({ r }: { r: Resumo }) {
       <Tile rotulo="Faturamento líquido" valor={moedaCompacta(r.liquido)} titulo={moedaCompleta(r.liquido)}>
         <Delta valor={r.vsMesAnterior} rotulo={comparacaoMes} />
         <Delta valor={r.vsAnoAnterior} rotulo={comparacaoAno} />
+        <span title={`Bruto ${moedaCompleta(r.bruto)} + cut-off inicial ${moedaCompleta(r.cutoffInicial)} − cut-off ${moedaCompleta(r.cutoff)} − devoluções ${moedaCompleta(r.devolucoes)}`}>
+          {r.parcial ? `Inclui ${moedaCompacta(r.cutoffInicial)} de cut-off inicial` : `Cut-off: +${moedaCompacta(r.cutoffInicial)} / −${moedaCompacta(r.cutoff)}`}
+        </span>
       </Tile>
 
       <Tile

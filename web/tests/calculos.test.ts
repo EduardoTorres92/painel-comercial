@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  composicao,
   diasUteis,
   mesAnterior,
   porCanal,
@@ -152,6 +153,38 @@ describe("séries e rankings", () => {
   it("no mês em andamento, a meta da filial é proporcional aos dias úteis", () => {
     const norte = porFilial(painel, { ...filtros, mes: "2026-11" }).find((f) => f.nome === "Norte")!;
     expect(norte.meta).toBeCloseTo((2500 * 5) / 21); // 5 de 21 dias úteis
+  });
+});
+
+describe("cut-off", () => {
+  // Outubro fecha com 150 de cut-off (notas entregues em novembro)
+  const painel = painelDeTeste();
+  painel.mensal["Todas|Todos"][1] = [2000, 200, 20, 8, 150];
+  const outubro = { mes: "2026-10", filial: "Todas", canal: "Todos" };
+  const novembro = { ...outubro, mes: "2026-11" };
+
+  it("líquido = bruto + cut-off inicial − cut-off − devoluções", () => {
+    expect(composicao(painel, "Todas|Todos", "2026-10")).toEqual({
+      bruto: 2000, devolucoes: 200, cutoffInicial: 0, cutoff: 150, liquido: 1650,
+    });
+    // o cut-off de outubro entra em novembro como cut-off inicial
+    expect(composicao(painel, "Todas|Todos", "2026-11")).toMatchObject({ cutoffInicial: 150, cutoff: 0, liquido: 750 });
+  });
+
+  it("projeção soma o cut-off inicial e desconta o cut-off esperado", () => {
+    // 150 + 600/5×21 − 7,5% (taxa de outubro) × 600/5×21
+    expect(resumir(painel, novembro).projecao).toBeCloseTo(150 + 2520 - 189);
+  });
+
+  it("comparação dos mesmos dias usa o cut-off inicial dos dois meses", () => {
+    // novembro até o dia 6: 150 + 600 = 750; outubro até o dia 6: 0 + 400
+    expect(resumir(painel, novembro).vsMesAnterior).toBeCloseTo(87.5);
+  });
+
+  it("ritmo começa no cut-off inicial e, no mês fechado, termina no líquido", () => {
+    expect(ritmoDoMes(painel, novembro, resumir(painel, novembro))[5].realizado).toBe(750);
+    const pontos = ritmoDoMes(painel, outubro, resumir(painel, outubro));
+    expect(pontos[30].realizado).toBe(1650);
   });
 });
 

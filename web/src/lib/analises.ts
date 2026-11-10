@@ -3,7 +3,7 @@
  * notas). Funções puras sobre os JSONs gerados pelo pipeline, testadas em
  * tests/analises.test.ts.
  */
-import { chave, chaveDe, diasNoMes, mesAnterior } from "./calculos";
+import { chave, chaveDe, composicao, diasNoMes, mesAnterior } from "./calculos";
 import type {
   DadosClientes,
   DadosDevolucoes,
@@ -192,8 +192,7 @@ export interface PotencialFilial {
 export function potencialPorFilial(painel: Painel, dados: DadosOperacao, filtros: Filtros): PotencialFilial[] {
   const i = painel.meses.indexOf(filtros.mes);
   return painel.filiais.map((filial) => {
-    const [bruto, devolvido] = painel.mensal[chave(filial, filtros.canal)][i];
-    const faturado = bruto - devolvido;
+    const faturado = composicao(painel, chave(filial, filtros.canal), filtros.mes).liquido;
     const carteira = dados.carteira.resumo[chave(filial, filtros.canal)]?.valor ?? 0;
     const meta = filtros.canal === TODOS ? painel.metas[filial][i] : null;
     const potencial = faturado + carteira;

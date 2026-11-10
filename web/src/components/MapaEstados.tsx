@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
+import type React from "react";
 import type { ItemUf } from "../lib/analises";
 import { moedaCompacta, moedaCompleta, numero, percentual } from "../lib/formatos";
-import { Cartao } from "./base";
 
 /** Posição (coluna, linha) de cada UF numa grade 7 × 7 que lembra o mapa do Brasil. */
 const GRADE: Record<string, [number, number]> = {
@@ -14,7 +14,7 @@ const GRADE: Record<string, [number, number]> = {
   RS: [2, 6],
 };
 
-const NOMES: Record<string, string> = {
+export const NOMES: Record<string, string> = {
   AC: "Acre", AL: "Alagoas", AP: "Amapá", AM: "Amazonas", BA: "Bahia", CE: "Ceará", DF: "Distrito Federal",
   ES: "Espírito Santo", GO: "Goiás", MA: "Maranhão", MT: "Mato Grosso", MS: "Mato Grosso do Sul",
   MG: "Minas Gerais", PA: "Pará", PB: "Paraíba", PR: "Paraná", PE: "Pernambuco", PI: "Piauí",
@@ -22,25 +22,16 @@ const NOMES: Record<string, string> = {
   SC: "Santa Catarina", SP: "São Paulo", SE: "Sergipe", TO: "Tocantins", EX: "Exterior",
 };
 
-const FAIXAS = 6;
+export const FAIXAS = 6;
 
-/**
- * Mapa em grade: um quadrado por estado, na posição aproximada. A cor segue
- * uma escala sequencial de um só tom (mais escuro = mais faturamento), em 6
- * faixas de tamanho igual entre zero e o maior valor.
- */
-export function MapaEstados({ itens, className }: { itens: ItemUf[]; className?: string }) {
-  const porUf = new Map(itens.map((i) => [i.uf, i]));
-  const maior = Math.max(...itens.filter((i) => i.uf !== "EX").map((i) => i.valor), 1);
-  const faixa = (v: number) => Math.min(FAIXAS, Math.max(1, Math.ceil((v / maior) * FAIXAS)));
-  const exterior = porUf.get("EX");
+/** Faixa de 1 a 6 (tamanho igual entre zero e o maior valor). */
+export const faixaDe = (valor: number, maior: number) => Math.min(FAIXAS, Math.max(1, Math.ceil((valor / maior) * FAIXAS)));
 
-  const estilo = (v: number): CSSProperties => {
-    const f = faixa(v);
-    return { background: `var(--seq-${f})`, color: f <= 3 ? "var(--seq-texto-claro)" : "var(--seq-texto-escuro)" };
-  };
+/** Maior faturamento entre os estados (sem o exterior). */
+export const maiorValor = (itens: ItemUf[]) => Math.max(...itens.filter((i) => i.uf !== "EX").map((i) => i.valor), 1);
 
-  const tabela = (
+export function TabelaEstados({ itens }: { itens: ItemUf[] }) {
+  return (
     <table className="tabela">
       <thead>
         <tr>
@@ -64,45 +55,65 @@ export function MapaEstados({ itens, className }: { itens: ItemUf[]; className?:
       </tbody>
     </table>
   );
+}
 
+/** Escala de cores e o valor vendido para o exterior (fora do mapa). */
+export function RodapeMapa({ itens, children }: { itens: ItemUf[]; children?: React.ReactNode }) {
+  const exterior = itens.find((i) => i.uf === "EX");
   return (
-    <Cartao className={className} titulo="Faturamento por estado" subtitulo="Bruto por UF do cliente · passe o mouse para ver os valores" tabela={tabela}>
-      <div className="mapa" role="list" aria-label="Faturamento por estado">
-        {Object.entries(GRADE).map(([uf, [coluna, linha]]) => {
-          const item = porUf.get(uf);
-          const texto = item
-            ? `${NOMES[uf]}: ${moedaCompleta(item.valor)} (${percentual(item.participacao)}), ${numero(item.notas)} notas`
-            : `${NOMES[uf]}: sem vendas`;
-          return (
-            <div
-              key={uf}
-              role="listitem"
-              tabIndex={0}
-              className={`uf${item ? "" : " vazio"}`}
-              style={{ gridColumn: coluna + 1, gridRow: linha + 1, ...(item ? estilo(item.valor) : {}) }}
-              title={texto}
-              aria-label={texto}
-            >
-              {uf}
-              {item && item.participacao >= 3 && <small>{percentual(item.participacao, 0)}</small>}
-            </div>
-          );
-        })}
+    <div className="mapa-rodape">
+      <div className="escala" aria-hidden="true">
+        <span>0</span>
+        {Array.from({ length: FAIXAS }, (_, i) => (
+          <span key={i} className="faixa" style={{ background: `var(--seq-${i + 1})` }} />
+        ))}
+        <span>{moedaCompacta(maiorValor(itens))}</span>
       </div>
-      <div className="mapa-rodape">
-        <div className="escala" aria-hidden="true">
-          <span>0</span>
-          {Array.from({ length: FAIXAS }, (_, i) => (
-            <span key={i} className="faixa" style={{ background: `var(--seq-${i + 1})` }} />
-          ))}
-          <span>{moedaCompacta(maior)}</span>
-        </div>
-        {exterior && (
-          <span>
-            Exterior (exportação): <b className="num">{moedaCompacta(exterior.valor)}</b> · {percentual(exterior.participacao)}
-          </span>
-        )}
-      </div>
-    </Cartao>
+      {exterior && (
+        <span>
+          Exterior (exportação): <b className="num">{moedaCompacta(exterior.valor)}</b> · {percentual(exterior.participacao)}
+        </span>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Mapa em grade: um quadrado por estado, na posição aproximada. A cor segue
+ * uma escala sequencial de um só tom (mais escuro = mais faturamento), em 6
+ * faixas de tamanho igual entre zero e o maior valor. Usado quando o
+ * navegador não tem WebGL para o mapa geográfico.
+ */
+export function GradeEstados({ itens }: { itens: ItemUf[] }) {
+  const porUf = new Map(itens.map((i) => [i.uf, i]));
+  const maior = maiorValor(itens);
+  const estilo = (v: number): CSSProperties => {
+    const f = faixaDe(v, maior);
+    return { background: `var(--seq-${f})`, color: f <= 3 ? "var(--seq-texto-claro)" : "var(--seq-texto-escuro)" };
+  };
+  return (
+    <div className="mapa" role="list" aria-label="Faturamento por estado">
+      {Object.entries(GRADE).map(([uf, [coluna, linha]]) => {
+        const item = porUf.get(uf);
+        const texto = item
+          ? `${NOMES[uf]}: ${moedaCompleta(item.valor)} (${percentual(item.participacao)}), ${numero(item.notas)} notas`
+          : `${NOMES[uf]}: sem vendas`;
+        return (
+          <div
+            key={uf}
+            role="listitem"
+            tabIndex={0}
+            className={`uf${item ? "" : " vazio"}`}
+            style={{ gridColumn: coluna + 1, gridRow: linha + 1, ...(item ? estilo(item.valor) : {}) }}
+            title={texto}
+            aria-label={texto}
+          >
+            {uf}
+            {item && item.participacao >= 3 && <small>{percentual(item.participacao, 0)}</small>}
+          </div>
+        );
+      })}
+    </div>
   );
 }

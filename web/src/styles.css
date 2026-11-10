@@ -943,3 +943,239 @@ select {
   z-index: 1;
   background: var(--superficie);
 }
+
+/* ---------- Cards por filial ---------- */
+.secao-filiais {
+  margin: 0 0 16px;
+}
+
+.secao-cabecalho h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.secao-cabecalho p {
+  margin: 2px 0 10px;
+  font-size: 12px;
+  color: var(--texto-fraco);
+}
+
+.cards-filiais {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card-filial {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  box-shadow: inset 0 3px 0 var(--serie-1), var(--sombra);
+  cursor: pointer;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+
+.card-filial:hover {
+  border-color: var(--borda-forte);
+}
+
+.card-filial:focus-visible {
+  outline: 2px solid var(--serie-1);
+  outline-offset: 2px;
+}
+
+.card-filial.ativo {
+  background: var(--serie-1-lavagem);
+}
+
+.card-filial.apagado {
+  opacity: 0.55;
+  box-shadow: inset 0 3px 0 var(--serie-1-suave), var(--sombra);
+}
+
+.card-filial-nome {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--texto-suave);
+}
+
+.card-filial-valor {
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.card-filial-delta,
+.card-filial-meta {
+  font-size: 12px;
+  color: var(--texto-fraco);
+}
+
+.card-filial dl {
+  display: grid;
+  gap: 3px;
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--borda);
+  font-size: 12px;
+}
+
+.card-filial dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-filial dt {
+  color: var(--texto-fraco);
+}
+
+.card-filial dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- Mapa geográfico (MapLibre) ---------- */
+.controles-mapa {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.segmentado {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--borda-forte);
+  border-radius: 8px;
+  background: var(--superficie-suave);
+}
+
+.segmentado button {
+  min-width: 40px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--texto-suave);
+  cursor: pointer;
+}
+
+.segmentado button[aria-pressed="true"] {
+  background: var(--superficie);
+  color: var(--serie-1);
+  box-shadow: var(--sombra);
+}
+
+.segmentado button:focus-visible,
+.limpar-fixado:focus-visible {
+  outline: 2px solid var(--foco);
+  outline-offset: 1px;
+}
+
+.botao-pequeno {
+  min-height: 36px;
+  padding: 4px 12px;
+  font-size: 13px;
+}
+
+.mapa-geo-caixa {
+  position: relative;
+}
+
+.mapa-geo {
+  height: 440px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mapa-carregando {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--texto-fraco);
+  background: var(--superficie);
+}
+
+.mapa-fixado {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  background: var(--serie-1-lavagem);
+  color: var(--texto);
+  font-variant-numeric: tabular-nums;
+}
+
+.limpar-fixado {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.limpar-fixado:hover {
+  background: var(--superficie);
+}
+
+/* Controles do MapLibre no tema do painel */
+.mapa-geo .maplibregl-ctrl-group {
+  background: var(--superficie);
+  border: 1px solid var(--borda-forte);
+  box-shadow: var(--sombra);
+}
+
+.mapa-geo .maplibregl-ctrl-group button + button {
+  border-top-color: var(--borda);
+}
+
+.mapa-geo .maplibregl-ctrl-group button:hover {
+  background-color: var(--superficie-suave);
+}
+
+:root[data-theme="dark"] .mapa-geo .maplibregl-ctrl-icon {
+  filter: invert(1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .mapa-geo .maplibregl-ctrl-icon {
+    filter: invert(1);
+  }
+}
+
+.mapa-geo .maplibregl-cooperative-gesture-screen {
+  font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .mapa-geo {
+    height: 340px;
+  }
+}

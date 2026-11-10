@@ -85,8 +85,8 @@ export function GraficoRitmo({ pontos, resumo, className }: Props) {
   );
 
   const subtitulo = resumo.parcial
-    ? `${mesLongo(resumo.mes)} · dados até o dia ${resumo.diaCorte}`
-    : `${mesLongo(resumo.mes)} · mês fechado`;
+    ? `${mesLongo(resumo.mes)} · dados até o dia ${resumo.diaCorte} · começa no cut-off inicial`
+    : `${mesLongo(resumo.mes)} · mês fechado · cut-off inicial no dia 1, cut-off de saída no último dia`;
 
   return (
     <Cartao className={className} titulo="Ritmo do mês" subtitulo={subtitulo} legenda={legenda} tabela={tabela}>

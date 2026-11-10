@@ -4,7 +4,12 @@ Transforma os dados brutos (data/bruto/) no JSON consumido pelo painel web.
 Regras de negócio aplicadas aqui (e só aqui):
 - Faturamento bruto: soma do valor dos itens das notas emitidas no período.
 - Devoluções: valor devolvido, contado na data da devolução.
-- Faturamento líquido = bruto − devoluções. É o valor comparado à meta.
+- Cut-off do mês: notas emitidas no mês e entregues só no mês seguinte. A
+  receita delas é reconhecida na entrega, então sai do mês da emissão e entra
+  no seguinte (o "cut-off inicial" do mês é o cut-off do mês anterior). No mês
+  em andamento o cut-off só é apurado no fechamento (fica 0).
+- Faturamento líquido = bruto + cut-off inicial − cut-off − devoluções. É o
+  valor comparado à meta (calculado no painel a partir da série mensal).
 - Ticket médio = bruto ÷ notas emitidas.
 - Clientes ativos: clientes distintos com nota no período (não é somável entre
   filtros, por isso é pré-calculado para cada combinação).
@@ -46,6 +51,8 @@ TOP_PRODUTOS, TOP_CLIENTES = 10, 8
 
 def carregar(entrada: str):
     notas = pd.read_csv(os.path.join(entrada, "notas_itens.csv"), parse_dates=["data_emissao"])
+    if "data_entrega" in notas:
+        notas["data_entrega"] = pd.to_datetime(notas["data_entrega"])
     devol = pd.read_csv(os.path.join(entrada, "devolucoes.csv"), parse_dates=["data_devolucao"])
     metas = pd.read_csv(os.path.join(entrada, "metas.csv"))
     produtos = pd.read_csv(os.path.join(entrada, "produtos.csv"))
@@ -83,6 +90,19 @@ def _arred(valor: float) -> float:
     return round(float(valor), 2)
 
 
+def cutoff_por_mes(n: pd.DataFrame, corte: dt.date) -> pd.Series:
+    """
+    Valor das notas emitidas no mês e entregues depois do último dia dele, por
+    filial × canal × mês. Meses ainda não fechados no corte ficam de fora.
+    """
+    if "data_entrega" not in n:
+        return pd.Series(dtype=float)
+    emissao = n["data_emissao"].dt.to_period("M")
+    fechado = (emissao.dt.end_time.dt.date <= corte)
+    sel = n[(n["data_entrega"].dt.to_period("M") > emissao) & fechado]
+    return sel.groupby(["filial", "canal", "mes"])["valor"].sum()
+
+
 def transformar(notas: pd.DataFrame, devol: pd.DataFrame, metas: pd.DataFrame, produtos: pd.DataFrame) -> dict:
     filiais = sorted(notas["filial"].unique())
     canais = list(notas.groupby("canal")["valor"].sum().sort_values(ascending=False).index)
@@ -98,6 +118,7 @@ def transformar(notas: pd.DataFrame, devol: pd.DataFrame, metas: pd.DataFrame, p
     devolvido = d.groupby(chaves)["valor"].sum()
     qtd_notas = n.groupby(chaves)["nota_fiscal"].nunique()
     clientes = n.groupby(chaves)["cliente"].nunique()
+    cutoff = cutoff_por_mes(n, corte)
 
     mensal = {}
     for filial, canal in combinacoes:
@@ -109,6 +130,7 @@ def transformar(notas: pd.DataFrame, devol: pd.DataFrame, metas: pd.DataFrame, p
                 _arred(devolvido.get(k, 0.0)),
                 int(qtd_notas.get(k, 0)),
                 int(clientes.get(k, 0)),
+                _arred(cutoff.get(k, 0.0)),
             ])
         mensal[_chave(filial, canal)] = linhas
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarrasRanking } from "./components/BarrasRanking";
+import { CardsFiliais } from "./components/CardsFiliais";
 import { GraficoEvolucao } from "./components/GraficoEvolucao";
 import { GraficoRitmo } from "./components/GraficoRitmo";
 import { Indicadores } from "./components/Indicadores";
@@ -138,6 +139,7 @@ function Conteudo({ painel }: { painel: Painel }) {
       {aba === "geral" && (
       <PainelAba id="geral">
       <Indicadores r={resumo} />
+      <CardsFiliais painel={painel} filtros={filtros} onSelecionar={(nome) => alternar("filial", nome, TODAS)} />
 
       <div className="grade">
         <GraficoRitmo className="col-8" pontos={ritmo} resumo={resumo} />

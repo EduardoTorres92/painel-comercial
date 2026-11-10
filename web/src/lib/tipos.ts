@@ -1,7 +1,10 @@
 /** Formato de public/data/painel.json (gerado por pipeline/transformar.py). */
 
-/** [bruto, devoluções, notas emitidas, clientes ativos] */
-export type LinhaMensal = [number, number, number, number];
+/**
+ * [bruto, devoluções, notas emitidas, clientes ativos, cut-off]
+ * Cut-off: notas emitidas no mês e entregues no seguinte (0 no mês em andamento).
+ */
+export type LinhaMensal = [number, number, number, number, number?];
 
 /** Chave de combinação de filtro: "<filial>|<canal>", com "Todas"/"Todos". */
 export type ChaveFiltro = string;

@@ -57,7 +57,7 @@ def test_total_geral_fecha_com_os_dados_brutos(brutos, painel):
     assert devolvido == pytest.approx(devol["valor"].sum(), abs=CENTAVO * len(painel["meses"]))
 
 
-@pytest.mark.parametrize("indice", [0, 1, 2, 3])  # bruto, devoluções, notas (somáveis)
+@pytest.mark.parametrize("indice", [0, 1, 2, 3, 4])  # bruto, devoluções, notas, clientes, cut-off
 def test_filiais_e_canais_somam_o_total(painel, indice):
     total = painel["mensal"]["Todas|Todos"]
     for m in range(len(painel["meses"])):
@@ -105,8 +105,36 @@ def test_mix_de_categorias_soma_o_bruto(painel):
 
 def test_devolucoes_nunca_superam_o_bruto(painel):
     for linhas in painel["mensal"].values():
-        for bruto, devolvido, _, _ in linhas:
+        for bruto, devolvido, *_ in linhas:
             assert 0 <= devolvido <= bruto or bruto == 0
+
+
+def test_entrega_nunca_antes_da_emissao(brutos):
+    notas = brutos[0]
+    assert (notas["data_entrega"] >= notas["data_emissao"]).all()
+
+
+def test_cutoff_fecha_com_as_notas_entregues_no_mes_seguinte(brutos, painel):
+    notas = brutos[0]
+    total = painel["mensal"]["Todas|Todos"]
+    for m, mes in enumerate(painel["meses"][:-1]):  # meses fechados
+        do_mes = notas[notas["mes"] == mes]
+        esperado = do_mes.loc[do_mes["data_entrega"].dt.strftime("%Y-%m") > mes, "valor"].sum()
+        assert total[m][4] == pytest.approx(esperado, abs=CENTAVO)
+        assert 0 < total[m][4] < total[m][0] * 0.2  # algumas notas, nunca a maior parte do mês
+
+
+def test_cutoff_do_mes_em_andamento_fica_para_o_fechamento(painel):
+    for linhas in painel["mensal"].values():
+        assert linhas[-1][4] == 0
+
+
+def test_cutoff_so_desloca_receita_entre_meses(painel):
+    # Somando todos os meses, bruto + cut-off inicial − cut-off = bruto total
+    # menos o cut-off do último mês fechado (que ainda entra no mês seguinte).
+    for linhas in painel["mensal"].values():
+        reconhecido = sum(l[0] + (linhas[m - 1][4] if m else 0) - l[4] for m, l in enumerate(linhas))
+        assert reconhecido == pytest.approx(sum(l[0] for l in linhas) - linhas[-1][4], abs=0.05)
 
 
 def test_mes_corrente_e_parcial(painel):
@@ -126,7 +154,7 @@ def _cada_mes(painel):
 
 def test_produtos_somam_bruto_e_devolucoes(painel, abas):
     por_produto = abas["produtos.json"]["porProduto"]
-    for chave, mes, (bruto, devolvido, _, _) in _cada_mes(painel):
+    for chave, mes, (bruto, devolvido, *_) in _cada_mes(painel):
         lista = por_produto.get(chave, {}).get(mes, [])
         assert sum(p[1] for p in lista) == pytest.approx(bruto, abs=0.5), (chave, mes)
         assert sum(p[3] for p in lista) == pytest.approx(devolvido, abs=0.5), (chave, mes)
@@ -135,7 +163,7 @@ def test_produtos_somam_bruto_e_devolucoes(painel, abas):
 
 def test_estados_somam_bruto_e_notas(painel, abas):
     por_uf = abas["clientes.json"]["porUf"]
-    for chave, mes, (bruto, _, notas, _) in _cada_mes(painel):
+    for chave, mes, (bruto, _, notas, *_) in _cada_mes(painel):
         ufs = por_uf.get(chave, {}).get(mes, {})
         assert sum(v[0] for v in ufs.values()) == pytest.approx(bruto, abs=0.5)
         assert sum(v[1] for v in ufs.values()) == notas  # cada nota tem um só estado
@@ -143,7 +171,7 @@ def test_estados_somam_bruto_e_notas(painel, abas):
 
 def test_lead_time_e_notas_por_dia_contam_todas_as_notas(painel, abas):
     operacao = abas["operacao.json"]
-    for chave, mes, (_, _, notas, _) in _cada_mes(painel):
+    for chave, mes, (_, _, notas, *_) in _cada_mes(painel):
         assert sum(operacao["leadTime"][chave][mes]) == notas
         assert sum(q for _, q in operacao["notasDia"].get(chave, {}).get(mes, [])) == notas
 
@@ -165,7 +193,7 @@ def test_carteira_da_empresa_e_a_soma_das_filiais(painel, abas):
 
 def test_motivos_somam_as_devolucoes(painel, abas):
     por_motivo = abas["devolucoes.json"]["porMotivo"]
-    for chave, mes, (_, devolvido, _, _) in _cada_mes(painel):
+    for chave, mes, (_, devolvido, *_) in _cada_mes(painel):
         assert sum(por_motivo[chave][mes]["valores"]) == pytest.approx(devolvido, abs=0.5)
 
 

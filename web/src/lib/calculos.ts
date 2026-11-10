@@ -1,8 +1,8 @@
 /**
  * Cálculos do painel a partir do JSON pré-agregado.
  *
- * As regras de negócio (o que é bruto, devolução, líquido, cliente ativo)
- * ficam no pipeline Python. Aqui só derivamos indicadores para exibição:
+ * As regras de negócio (o que é bruto, devolução, cut-off, cliente ativo)
+ * ficam no pipeline Python; o líquido é montado em `composicao`. Aqui só derivamos indicadores para exibição:
  * ticket médio, taxa de devolução, atingimento de meta, comparações e a
  * projeção do mês em andamento.
  */
@@ -50,11 +50,45 @@ export function fracaoMetaAteCorte(painel: Painel, mes: string): number {
   return diasUteis(mes, dia) / diasUteis(mes);
 }
 
-export interface Resumo {
-  mes: string;
+export interface Composicao {
   bruto: number;
   devolucoes: number;
+  /** Cut-off do mês anterior: notas de lá entregues neste mês (entram como receita). */
+  cutoffInicial: number;
+  /** Notas deste mês entregues no seguinte (saem). 0 enquanto o mês não fecha. */
+  cutoff: number;
+  /** bruto + cut-off inicial − cut-off − devoluções */
   liquido: number;
+}
+
+/** Composição do faturamento líquido de uma combinação de filtro no mês. */
+export function composicao(painel: Painel, k: ChaveFiltro, mes: string): Composicao {
+  const l = linha(painel, k, mes);
+  const bruto = l?.[0] ?? 0;
+  const devolucoes = l?.[1] ?? 0;
+  const cutoff = l?.[4] ?? 0;
+  const cutoffInicial = linha(painel, k, mesAnterior(mes))?.[4] ?? 0;
+  return { bruto, devolucoes, cutoffInicial, cutoff, liquido: bruto + cutoffInicial - cutoff - devolucoes };
+}
+
+/**
+ * Taxa de cut-off (% do bruto) dos últimos meses fechados antes de `mes`, para
+ * estimar o cut-off de saída do mês em andamento.
+ */
+export function taxaCutoffRecente(painel: Painel, k: ChaveFiltro, mes: string, n = 3): number {
+  let bruto = 0;
+  let cutoff = 0;
+  for (let p = 1; p <= n; p++) {
+    const l = linha(painel, k, mesAnterior(mes, p));
+    if (!l) continue;
+    bruto += l[0];
+    cutoff += l[4] ?? 0;
+  }
+  return bruto > 0 ? cutoff / bruto : 0;
+}
+
+export interface Resumo extends Composicao {
+  mes: string;
   notas: number;
   clientes: number;
   ticketMedio: number;
@@ -68,7 +102,10 @@ export interface Resumo {
   parcial: boolean;
   /** Dia do corte, quando parcial. */
   diaCorte: number | null;
-  /** Projeção do líquido no fim do mês (só no mês parcial). */
+  /**
+   * Projeção do líquido no fim do mês (só no mês parcial): cut-off inicial +
+   * ritmo dos dias úteis até o fim − cut-off de saída estimado pela taxa recente.
+   */
   projecao: number | null;
   atingimentoProjetado: number | null;
   /** Variação do líquido, comparando os mesmos dias quando o mês é parcial. */
@@ -80,10 +117,15 @@ export interface Resumo {
   taxaDevolucaoAnterior: number | null;
 }
 
+/**
+ * Líquido até o dia: cut-off inicial + (bruto − devoluções) dos dias. O cut-off
+ * de saída só é conhecido no fechamento, então não entra numa parcial.
+ */
 function liquidoAteDia(painel: Painel, k: ChaveFiltro, mes: string, dia: number): number | null {
   const dias = painel.diario[k]?.[mes];
   if (!painel.meses.includes(mes)) return null;
-  return (dias ?? []).filter(([d]) => d <= dia).reduce((s, [, v]) => s + v, 0);
+  const inicial = linha(painel, k, mesAnterior(mes))?.[4] ?? 0;
+  return inicial + (dias ?? []).filter(([d]) => d <= dia).reduce((s, [, v]) => s + v, 0);
 }
 
 function linha(painel: Painel, k: ChaveFiltro, mes: string) {
@@ -94,8 +136,9 @@ function linha(painel: Painel, k: ChaveFiltro, mes: string) {
 export function resumir(painel: Painel, filtros: Filtros): Resumo {
   const k = chaveDe(filtros);
   const { mes } = filtros;
-  const [bruto, devolucoes, notas, clientes] = linha(painel, k, mes) ?? [0, 0, 0, 0];
-  const liquido = bruto - devolucoes;
+  const [, , notas, clientes] = linha(painel, k, mes) ?? [0, 0, 0, 0];
+  const comp = composicao(painel, k, mes);
+  const { bruto, devolucoes, liquido } = comp;
 
   const corte = painel.corte;
   const diaCorte = Number(corte.slice(8, 10));
@@ -107,7 +150,12 @@ export function resumir(painel: Painel, filtros: Filtros): Resumo {
   let projecao: number | null = null;
   if (parcial) {
     const decorridos = diasUteis(mes, diaCorte);
-    projecao = decorridos > 0 ? (liquido / decorridos) * diasUteis(mes) : null;
+    if (decorridos > 0) {
+      const fator = diasUteis(mes) / decorridos;
+      const operacional = bruto - devolucoes; // sem os cut-offs
+      const cutoffEstimado = taxaCutoffRecente(painel, k, mes) * bruto * fator;
+      projecao = comp.cutoffInicial + operacional * fator - cutoffEstimado;
+    }
   }
 
   // Comparações do líquido: no mês parcial, mesmos dias corridos do mês de comparação
@@ -116,8 +164,7 @@ export function resumir(painel: Painel, filtros: Filtros): Resumo {
       const diaLimite = Math.min(diaCorte, diasNoMes(outro));
       return liquidoAteDia(painel, k, outro, diaLimite);
     }
-    const l = linha(painel, k, outro);
-    return l ? l[0] - l[1] : null;
+    return linha(painel, k, outro) ? composicao(painel, k, outro).liquido : null;
   };
 
   const anterior = linha(painel, k, mesAnterior(mes));
@@ -126,9 +173,7 @@ export function resumir(painel: Painel, filtros: Filtros): Resumo {
 
   return {
     mes,
-    bruto,
-    devolucoes,
-    liquido,
+    ...comp,
     notas,
     clientes,
     ticketMedio,
@@ -159,15 +204,17 @@ export function serieMensal(painel: Painel, filtros: Filtros, n = 12): PontoMens
   const inicio = Math.max(0, fim - n + 1);
   const k = chaveDe(filtros);
   return painel.meses.slice(inicio, fim + 1).map((mes, j) => {
-    const [bruto, devol] = painel.mensal[k][inicio + j];
     const meta = filtros.canal === TODOS ? painel.metas[filtros.filial]?.[inicio + j] ?? null : null;
-    return { mes, liquido: bruto - devol, meta };
+    return { mes, liquido: composicao(painel, k, mes).liquido, meta };
   });
 }
 
 export interface PontoRitmo {
   dia: number;
-  /** Líquido acumulado até o dia (null depois do corte). */
+  /**
+   * Líquido acumulado até o dia (null depois do corte): começa com o cut-off
+   * inicial e, no mês fechado, desconta o cut-off de saída no último dia.
+   */
   realizado: number | null;
   /** Meta proporcional aos dias úteis decorridos. */
   meta: number | null;
@@ -180,10 +227,11 @@ export function ritmoDoMes(painel: Painel, filtros: Filtros, resumo: Resumo): Po
   const uteis = diasUteis(mes);
   const porDia = new Map(painel.diario[chaveDe(filtros)]?.[mes] ?? []);
   const ultimo = resumo.parcial && resumo.diaCorte ? resumo.diaCorte : total;
-  let acumulado = 0;
+  let acumulado = resumo.cutoffInicial;
   const pontos: PontoRitmo[] = [];
   for (let dia = 1; dia <= total; dia++) {
     acumulado += porDia.get(dia) ?? 0;
+    if (dia === total) acumulado -= resumo.cutoff;
     pontos.push({
       dia,
       realizado: dia <= ultimo ? acumulado : null,
@@ -210,12 +258,11 @@ function ranking(itens: { nome: string; valor: number; meta?: number | null }[])
 
 /** Líquido por canal, respeitando o filtro de filial. */
 export function porCanal(painel: Painel, filtros: Filtros): ItemRanking[] {
-  const i = painel.meses.indexOf(filtros.mes);
   return ranking(
-    painel.canais.map((canal) => {
-      const [b, d] = painel.mensal[chave(filtros.filial, canal)][i];
-      return { nome: canal, valor: b - d };
-    }),
+    painel.canais.map((canal) => ({
+      nome: canal,
+      valor: composicao(painel, chave(filtros.filial, canal), filtros.mes).liquido,
+    })),
   );
 }
 
@@ -228,8 +275,8 @@ export function porFilial(painel: Painel, filtros: Filtros): ItemRanking[] {
   const fracao = fracaoMetaAteCorte(painel, filtros.mes);
   return ranking(
     painel.filiais.map((filial) => {
-      const [b, d] = painel.mensal[chave(filial, filtros.canal)][i];
-      return { nome: filial, valor: b - d, meta: filtros.canal === TODOS ? painel.metas[filial][i] * fracao : null };
+      const { liquido } = composicao(painel, chave(filial, filtros.canal), filtros.mes);
+      return { nome: filial, valor: liquido, meta: filtros.canal === TODOS ? painel.metas[filial][i] * fracao : null };
     }),
   );
 }

@@ -7,7 +7,7 @@ import type { DadosClientes, Filtros, Painel } from "../../lib/tipos";
 import { ComDados, Tiles } from "../Abas";
 import { BarrasRanking } from "../BarrasRanking";
 import { GraficoColunas } from "../GraficoColunas";
-import { MapaEstados } from "../MapaEstados";
+import { MapaBrasil } from "../MapaBrasil";
 import { TabelaTop } from "../TabelaTop";
 
 const INTEIRO = { completo: numero, compacto: numero, eixo: numero };
@@ -55,7 +55,7 @@ function Conteudo({
         ]}
       />
       <div className="grade">
-        <MapaEstados className="col-8" itens={estados} />
+        <MapaBrasil className="col-8" itens={estados} />
         <BarrasRanking
           className="col-4"
           titulo="Estados"

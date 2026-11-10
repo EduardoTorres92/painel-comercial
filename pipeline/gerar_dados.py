@@ -11,13 +11,16 @@ seguem padrões realistas para o painel ter o que mostrar:
 - devoluções parciais ou totais (~2,5% do valor), alguns dias depois da venda;
 - metas mensais por filial, nem sempre atingidas;
 - estado (UF) do cliente, data do pedido (para o lead time), motivo das
-  devoluções e uma carteira de pedidos em aberto no dia do corte.
+  devoluções e uma carteira de pedidos em aberto no dia do corte;
+- data de entrega de cada nota (prazo de transporte conforme a distância): as
+  notas emitidas nos últimos dias do mês e entregues no mês seguinte formam o
+  cut-off.
 
 Tudo é determinístico (semente fixa): rodar de novo gera exatamente os mesmos
 arquivos.
 
 Saída (pasta data/bruto/):
-    notas_itens.csv   uma linha por item de nota fiscal
+    notas_itens.csv   uma linha por item de nota fiscal (com a data de entrega)
     devolucoes.csv    itens devolvidos, referenciando a nota de origem (com motivo)
     carteira.csv      pedidos em aberto no dia do corte (potencial do mês)
     metas.csv         meta de faturamento por filial e mês
@@ -138,6 +141,13 @@ PESOS_MOTIVOS = [0.34, 0.22, 0.18, 0.16, 0.10]
 STATUS_CARTEIRA = ["Liberado", "Em separação", "Aguardando estoque", "Bloqueio de crédito"]
 PESOS_STATUS = [0.45, 0.30, 0.15, 0.10]
 
+# Prazo de transporte em dias úteis (seg–sex) após a emissão: (opções, probabilidades)
+TRANSPORTE = {
+    "local": ([0, 1, 2], [0.30, 0.50, 0.20]),       # cliente no estado da filial
+    "regional": ([1, 2, 3, 4], [0.20, 0.40, 0.30, 0.10]),  # estado vizinho
+    "exportacao": ([5, 6, 7, 8, 9], [0.15, 0.25, 0.30, 0.20, 0.10]),
+}
+
 TAXA_DEVOLUCAO = 0.045  # chance de um item ser devolvido (parcial ou total)
 
 
@@ -158,6 +168,23 @@ def _menos_dias_uteis(dia: dt.date, n: int) -> dt.date:
         if dia.weekday() < 5:
             n -= 1
     return dia
+
+
+def _datas_entrega(notas: pd.DataFrame, semente: int) -> pd.Series:
+    """
+    Data de entrega de cada nota: emissão + prazo de transporte em dias úteis.
+    Usa um gerador próprio, sorteando uma vez por nota na ordem do número, para
+    não alterar nenhum outro dado.
+    """
+    rng = np.random.default_rng(semente)
+    cabecalho = notas.drop_duplicates("nota_fiscal").sort_values("nota_fiscal")
+    casa = cabecalho["filial"].map({f: uf for f, (uf, _) in UF_FILIAL.items()})
+    tipo = np.where(cabecalho["uf"].eq("EX"), "exportacao",
+                    np.where(cabecalho["uf"].eq(casa), "local", "regional"))
+    prazo = np.array([rng.choice(TRANSPORTE[t][0], p=TRANSPORTE[t][1]) for t in tipo])
+    emissao = pd.to_datetime(cabecalho["data_emissao"]).values.astype("datetime64[D]")
+    entrega = np.busday_offset(emissao, prazo, roll="forward")
+    return notas["nota_fiscal"].map(dict(zip(cabecalho["nota_fiscal"], pd.to_datetime(entrega).date)))
 
 
 def _uf_cliente(rng: np.random.Generator, filial: str, canal: str) -> str:
@@ -254,6 +281,7 @@ def gerar(semente: int = 42):
     colunas = ["nota_fiscal", "data_emissao", "data_pedido", "filial", "canal", "cliente", "uf",
                "produto", "quantidade", "valor"]
     notas = pd.DataFrame(itens, columns=colunas)
+    notas.insert(2, "data_entrega", _datas_entrega(notas, semente + 2))
     devol = pd.DataFrame(devolucoes, columns=["nota_origem", "data_devolucao", "filial", "canal", "cliente",
                                               "produto", "quantidade", "valor", "motivo"])
     metas_df = pd.DataFrame(metas, columns=["mes", "filial", "meta"])
