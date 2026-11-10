@@ -12,15 +12,34 @@ interface Props {
   onSelecionar?: (nome: string) => void;
   /** Rótulo da coluna de valor na tabela. */
   rotuloValor?: string;
+  /** Formatação do valor (padrão: moeda). `compacto` vai no rótulo da barra. */
+  formatar?: { completo: (v: number) => string; compacto: (v: number) => string };
+  /** Texto abaixo do valor (padrão: participação ou atingimento da meta). */
+  detalhe?: (item: ItemRanking) => string;
+  /** Mostrar a coluna de participação na tabela (padrão: sim). */
+  comParticipacao?: boolean;
   className?: string;
 }
 
+const MOEDA = { completo: moedaCompleta, compacto: moedaCompacta };
+
 const LINHA = 40;
 const ESPESSURA = 16;
-const MARGEM = { topo: 4, direita: 112, esquerda: 112 };
+const MARGEM = { topo: 4, direita: 112, esquerda: 140 };
 
 /** Barras horizontais ordenadas, uma só cor; com meta, uma marca laranja por barra. */
-export function BarrasRanking({ titulo, subtitulo, itens, selecionado, onSelecionar, rotuloValor = "Valor", className }: Props) {
+export function BarrasRanking({
+  titulo,
+  subtitulo,
+  itens,
+  selecionado,
+  onSelecionar,
+  rotuloValor = "Valor",
+  formatar = MOEDA,
+  detalhe,
+  comParticipacao = true,
+  className,
+}: Props) {
   const [ref, largura] = useLargura<HTMLDivElement>(400);
   const { dica, mostrar, esconder } = useDica();
   const temMeta = itens.some((i) => i.meta);
@@ -43,7 +62,7 @@ export function BarrasRanking({ titulo, subtitulo, itens, selecionado, onSelecio
         <tr>
           <th>Nome</th>
           <th className="direita">{rotuloValor}</th>
-          <th className="direita">Participação</th>
+          {comParticipacao && <th className="direita">Participação</th>}
           {temMeta && <th className="direita">Meta</th>}
           {temMeta && <th className="direita">Atingimento</th>}
         </tr>
@@ -52,8 +71,8 @@ export function BarrasRanking({ titulo, subtitulo, itens, selecionado, onSelecio
         {itens.map((i) => (
           <tr key={i.nome}>
             <td>{i.nome}</td>
-            <td className="direita num">{moedaCompleta(i.valor)}</td>
-            <td className="direita num">{percentual(i.participacao)}</td>
+            <td className="direita num">{formatar.completo(i.valor)}</td>
+            {comParticipacao && <td className="direita num">{percentual(i.participacao)}</td>}
             {temMeta && <td className="direita num">{i.meta ? moedaCompleta(i.meta) : "–"}</td>}
             {temMeta && <td className="direita num">{i.meta ? percentual((i.valor / i.meta) * 100) : "–"}</td>}
           </tr>
@@ -70,24 +89,26 @@ export function BarrasRanking({ titulo, subtitulo, itens, selecionado, onSelecio
           {itens.map((item, i) => {
             const meio = MARGEM.topo + i * LINHA + LINHA / 2;
             const destaque = !selecionado || selecionado === item.nome;
-            const rotuloDireita = temMeta && item.meta
-              ? `${percentual((item.valor / item.meta) * 100, 0)} da meta`
-              : percentual(item.participacao);
+            const rotuloDireita = detalhe
+              ? detalhe(item)
+              : temMeta && item.meta
+                ? `${percentual((item.valor / item.meta) * 100, 0)} da meta`
+                : percentual(item.participacao);
             const ativar = () =>
               mostrar({
                 x: x(item.valor) - (x(item.valor) - x(0)) / 2,
                 y: meio - ESPESSURA / 2,
                 titulo: item.nome,
                 linhas: [
-                  { valor: moedaCompleta(item.valor), rotulo: rotuloValor.toLowerCase(), cor: "var(--serie-1)" },
-                  { valor: percentual(item.participacao), rotulo: "do total" },
+                  { valor: formatar.completo(item.valor), rotulo: rotuloValor.toLowerCase(), cor: "var(--serie-1)" },
+                  ...(detalhe ? [{ valor: rotuloDireita, rotulo: "" }] : comParticipacao ? [{ valor: percentual(item.participacao), rotulo: "do total" }] : []),
                   ...(item.meta ? [{ valor: moedaCompleta(item.meta), rotulo: "meta", cor: "var(--serie-meta)" }] : []),
                 ],
               });
             return (
               <g key={item.nome}>
                 <text className="rotulo-nome" x={MARGEM.esquerda - 10} y={meio} dy="0.32em" textAnchor="end">
-                  {item.nome.length > 16 ? `${item.nome.slice(0, 15)}…` : item.nome}
+                  {item.nome.length > 21 ? `${item.nome.slice(0, 20)}…` : item.nome}
                 </text>
                 <path
                   d={caminhoBarra(x(0), meio - ESPESSURA / 2, x(item.valor) - x(0), ESPESSURA, "horizontal")}
@@ -97,7 +118,7 @@ export function BarrasRanking({ titulo, subtitulo, itens, selecionado, onSelecio
                   <line x1={x(item.meta)} x2={x(item.meta)} y1={meio - ESPESSURA / 2 - 5} y2={meio + ESPESSURA / 2 + 5} stroke="var(--serie-meta)" strokeWidth={2} strokeLinecap="round" />
                 ) : null}
                 <text className="rotulo-valor" x={Math.max(x(item.valor), item.meta ? x(item.meta) : 0) + 8} y={meio - 6} dy="0.32em">
-                  {moedaCompacta(item.valor)}
+                  {formatar.compacto(item.valor)}
                 </text>
                 <text x={Math.max(x(item.valor), item.meta ? x(item.meta) : 0) + 8} y={meio + 8} dy="0.32em">
                   {rotuloDireita}
@@ -111,7 +132,7 @@ export function BarrasRanking({ titulo, subtitulo, itens, selecionado, onSelecio
                   fill="transparent"
                   tabIndex={0}
                   role={onSelecionar ? "button" : undefined}
-                  aria-label={`${item.nome}: ${moedaCompleta(item.valor)}, ${rotuloDireita}`}
+                  aria-label={`${item.nome}: ${formatar.completo(item.valor)}, ${rotuloDireita}`}
                   aria-pressed={onSelecionar ? selecionado === item.nome : undefined}
                   onPointerMove={ativar}
                   onFocus={ativar}

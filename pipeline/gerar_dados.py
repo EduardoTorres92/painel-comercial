@@ -9,14 +9,17 @@ seguem padrões realistas para o painel ter o que mostrar:
 - dias úteis com movimento e sábados fracos;
 - mix de canal e de produto diferente por filial;
 - devoluções parciais ou totais (~2,5% do valor), alguns dias depois da venda;
-- metas mensais por filial, nem sempre atingidas.
+- metas mensais por filial, nem sempre atingidas;
+- estado (UF) do cliente, data do pedido (para o lead time), motivo das
+  devoluções e uma carteira de pedidos em aberto no dia do corte.
 
 Tudo é determinístico (semente fixa): rodar de novo gera exatamente os mesmos
 arquivos.
 
 Saída (pasta data/bruto/):
     notas_itens.csv   uma linha por item de nota fiscal
-    devolucoes.csv    itens devolvidos, referenciando a nota de origem
+    devolucoes.csv    itens devolvidos, referenciando a nota de origem (com motivo)
+    carteira.csv      pedidos em aberto no dia do corte (potencial do mês)
     metas.csv         meta de faturamento por filial e mês
     produtos.csv      cadastro de produtos
 
@@ -111,6 +114,30 @@ NOMES_CLIENTE = [
 ]
 PAISES = ["Portugal", "Chile", "Alemanha", "Japão", "Estados Unidos", "Uruguai"]
 
+# Estado de cada filial e estados vizinhos atendidos por ela
+UF_FILIAL = {
+    "Belo Horizonte": ("MG", ["ES", "RJ", "SP", "BA", "GO", "DF"]),
+    "Recife": ("PE", ["PB", "AL", "RN", "CE", "BA", "SE", "PI", "MA"]),
+    "Curitiba": ("PR", ["SC", "RS", "SP", "MS"]),
+    "Goiânia": ("GO", ["DF", "TO", "MT", "MS", "MG", "PA"]),
+}
+UFS_ECOMMERCE = ["SP", "RJ", "MG", "PR", "RS", "SC", "BA", "PE", "GO", "DF", "CE", "ES", "PA", "AM", "MT", "MS"]
+PESOS_ECOMMERCE = [22, 11, 12, 7, 6, 5, 5, 4, 4, 4, 3, 3, 2, 2, 2, 2]
+
+# Lead time (dias úteis entre pedido e emissão da nota): probabilidade de D+0 a D+5 por filial
+LEAD_TIME = {
+    "Belo Horizonte": [0.22, 0.38, 0.22, 0.10, 0.05, 0.03],
+    "Recife": [0.10, 0.28, 0.28, 0.17, 0.10, 0.07],
+    "Curitiba": [0.30, 0.40, 0.17, 0.07, 0.04, 0.02],
+    "Goiânia": [0.12, 0.30, 0.27, 0.15, 0.10, 0.06],
+}
+
+MOTIVOS_DEVOLUCAO = ["Avaria no transporte", "Produto errado", "Validade próxima", "Desistência do cliente", "Preço divergente"]
+PESOS_MOTIVOS = [0.34, 0.22, 0.18, 0.16, 0.10]
+
+STATUS_CARTEIRA = ["Liberado", "Em separação", "Aguardando estoque", "Bloqueio de crédito"]
+PESOS_STATUS = [0.45, 0.30, 0.15, 0.10]
+
 TAXA_DEVOLUCAO = 0.045  # chance de um item ser devolvido (parcial ou total)
 
 
@@ -122,6 +149,22 @@ def _dias_uteis(ano: int, mes: int) -> list[dt.date]:
             dias.append(dia)
         dia += dt.timedelta(days=1)
     return dias
+
+
+def _menos_dias_uteis(dia: dt.date, n: int) -> dt.date:
+    """Volta `n` dias úteis (segunda a sexta)."""
+    while n > 0:
+        dia -= dt.timedelta(days=1)
+        if dia.weekday() < 5:
+            n -= 1
+    return dia
+
+
+def _uf_cliente(rng: np.random.Generator, filial: str, canal: str) -> str:
+    if canal == "Exportação":
+        return "EX"
+    casa, vizinhos = UF_FILIAL[filial]
+    return casa if rng.random() < 0.68 else str(rng.choice(vizinhos))
 
 
 def _clientes(rng: np.random.Generator) -> dict[tuple[str, str], list[str]]:
@@ -146,7 +189,15 @@ def _clientes(rng: np.random.Generator) -> dict[tuple[str, str], list[str]]:
 
 def gerar(semente: int = 42):
     rng = np.random.default_rng(semente)
+    # Gerador separado para os campos complementares (UF, pedido, motivo, carteira):
+    # assim eles não alteram a sequência que produz vendas, devoluções e metas.
+    extra = np.random.default_rng(semente + 1)
     carteira = _clientes(rng)
+    uf_de = {
+        cliente: _uf_cliente(extra, filial, canal)
+        for (filial, canal), clientes in carteira.items()
+        for cliente in clientes
+    }
     codigos = [p[0] for p in PRODUTOS]
     precos = np.array([p[3] for p in PRODUTOS])
     pesos_canal = {
@@ -172,6 +223,9 @@ def gerar(semente: int = 42):
                     canal = CANAIS[rng.choice(len(CANAIS), p=mix)]
                     perfil = PERFIL_CANAL[canal]
                     cliente = rng.choice(carteira[(filial, canal)])
+                    uf = (str(extra.choice(UFS_ECOMMERCE, p=np.array(PESOS_ECOMMERCE) / sum(PESOS_ECOMMERCE)))
+                          if canal == "E-commerce" else uf_de[cliente])
+                    data_pedido = _menos_dias_uteis(dia, int(extra.choice(6, p=LEAD_TIME[filial])))
                     n_itens = rng.integers(*perfil["itens"])
                     escolhidos = rng.choice(len(PRODUTOS), size=n_itens, replace=False, p=pesos_canal[canal])
                     for idx in escolhidos:
@@ -179,14 +233,15 @@ def gerar(semente: int = 42):
                         preco = precos[idx] * (1 - perfil["desconto"]) * rng.uniform(0.97, 1.03)
                         valor = round(quantidade * preco, 2)
                         esperado_mes += valor
-                        itens.append((numero_nf, dia, filial, canal, cliente, codigos[idx], quantidade, valor))
+                        itens.append((numero_nf, dia, data_pedido, filial, canal, cliente, uf, codigos[idx], quantidade, valor))
 
                         if rng.random() < TAXA_DEVOLUCAO:
                             parte = rng.choice([0.25, 0.5, 1.0], p=[0.4, 0.35, 0.25])
                             qtd_dev = max(1, int(round(quantidade * parte)))
                             data_dev = min(dia + dt.timedelta(days=int(rng.integers(3, 21))), CORTE)
+                            motivo = str(extra.choice(MOTIVOS_DEVOLUCAO, p=PESOS_MOTIVOS))
                             devolucoes.append((numero_nf, data_dev, filial, canal, cliente, codigos[idx],
-                                               qtd_dev, round(valor * qtd_dev / quantidade, 2)))
+                                               qtd_dev, round(valor * qtd_dev / quantidade, 2), motivo))
 
             # Meta: o que a filial "deveria" vender no mês inteiro, com um desafio de 3% a 9%
             dias_mes = _dias_uteis(periodo.year, periodo.month)
@@ -196,13 +251,48 @@ def gerar(semente: int = 42):
             desafio = rng.uniform(0.94, 1.10)  # há meses de meta folgada e meses de meta difícil
             metas.append((str(periodo), filial, round(projecao * desafio, -3)))
 
-    colunas = ["nota_fiscal", "data_emissao", "filial", "canal", "cliente", "produto", "quantidade", "valor"]
+    colunas = ["nota_fiscal", "data_emissao", "data_pedido", "filial", "canal", "cliente", "uf",
+               "produto", "quantidade", "valor"]
     notas = pd.DataFrame(itens, columns=colunas)
     devol = pd.DataFrame(devolucoes, columns=["nota_origem", "data_devolucao", "filial", "canal", "cliente",
-                                              "produto", "quantidade", "valor"])
+                                              "produto", "quantidade", "valor", "motivo"])
     metas_df = pd.DataFrame(metas, columns=["mes", "filial", "meta"])
     produtos = pd.DataFrame([p[:4] for p in PRODUTOS], columns=["produto", "descricao", "categoria", "preco_tabela"])
-    return notas, devol, metas_df, produtos
+    pedidos = _carteira(extra, carteira, uf_de, precos, pesos_canal, len(meses) - 1)
+    return notas, devol, metas_df, produtos, pedidos
+
+
+def _carteira(extra, carteira, uf_de, precos, pesos_canal, indice_mes) -> pd.DataFrame:
+    """
+    Pedidos em aberto no dia do corte, com entrega prevista até o fim do mês:
+    cerca de 60% do que a filial ainda deve faturar no mês, em situações variadas.
+    """
+    periodo = pd.Period(CORTE, freq="M")
+    restantes = [d for d in _dias_uteis(periodo.year, periodo.month) if d > CORTE]
+    linhas, numero = [], 900_000
+    for filial, (base, crescimento, mix) in FILIAIS.items():
+        uteis = sum(0.35 if d.weekday() == 5 else 1.0 for d in restantes)
+        quantidade_pedidos = extra.poisson(base * SAZONALIDADE[periodo.month] * (1 + crescimento) ** indice_mes * uteis * 0.6)
+        for _ in range(quantidade_pedidos):
+            numero += 1
+            canal = CANAIS[extra.choice(len(CANAIS), p=mix)]
+            perfil = PERFIL_CANAL[canal]
+            cliente = str(extra.choice(carteira[(filial, canal)]))
+            uf = uf_de[cliente] if canal != "E-commerce" else "SP"
+            itens = extra.choice(len(PRODUTOS), size=extra.integers(*perfil["itens"]), replace=False, p=pesos_canal[canal])
+            valor = sum(
+                max(1, int(extra.gamma(2.0, perfil["quantidade"] / 2))) * precos[i] * (1 - perfil["desconto"])
+                for i in itens
+            )
+            linhas.append((
+                f"PV-{numero}", filial, canal, cliente, uf,
+                _menos_dias_uteis(CORTE, int(extra.integers(0, 6))),
+                restantes[int(extra.integers(len(restantes)))],
+                str(extra.choice(STATUS_CARTEIRA, p=PESOS_STATUS)),
+                round(float(valor), 2),
+            ))
+    return pd.DataFrame(linhas, columns=["pedido", "filial", "canal", "cliente", "uf", "data_pedido",
+                                         "entrega_prevista", "situacao", "valor"])
 
 
 def main():
@@ -211,14 +301,16 @@ def main():
     parser.add_argument("--semente", type=int, default=42)
     args = parser.parse_args()
 
-    notas, devol, metas, produtos = gerar(args.semente)
+    notas, devol, metas, produtos, pedidos = gerar(args.semente)
     os.makedirs(args.saida, exist_ok=True)
+    pedidos.to_csv(os.path.join(args.saida, "carteira.csv"), index=False)
     notas.to_csv(os.path.join(args.saida, "notas_itens.csv"), index=False)
     devol.to_csv(os.path.join(args.saida, "devolucoes.csv"), index=False)
     metas.to_csv(os.path.join(args.saida, "metas.csv"), index=False)
     produtos.to_csv(os.path.join(args.saida, "produtos.csv"), index=False)
     print(f"{notas['nota_fiscal'].nunique():,} notas · {len(notas):,} itens · "
-          f"{len(devol):,} devoluções · {len(metas)} metas → {os.path.relpath(args.saida, RAIZ)}")
+          f"{len(devol):,} devoluções · {len(metas)} metas · {len(pedidos):,} pedidos em carteira "
+          f"→ {os.path.relpath(args.saida, RAIZ)}")
 
 
 if __name__ == "__main__":

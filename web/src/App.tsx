@@ -3,19 +3,14 @@ import { BarrasRanking } from "./components/BarrasRanking";
 import { GraficoEvolucao } from "./components/GraficoEvolucao";
 import { GraficoRitmo } from "./components/GraficoRitmo";
 import { Indicadores } from "./components/Indicadores";
-import { TabelaTop } from "./components/TabelaTop";
+import { ABAS, NavegacaoAbas, PainelAba, type IdAba } from "./components/Abas";
 import { Icone } from "./components/base";
-import {
-  filtrosPadrao,
-  porCanal,
-  porCategoria,
-  porFilial,
-  resumir,
-  ritmoDoMes,
-  serieMensal,
-  topClientes,
-  topProdutos,
-} from "./lib/calculos";
+import { AbaClientes } from "./components/paginas/Clientes";
+import { AbaDevolucoes } from "./components/paginas/Devolucoes";
+import { AbaNotas } from "./components/paginas/Notas";
+import { AbaOperacao } from "./components/paginas/Operacao";
+import { AbaProdutos } from "./components/paginas/Produtos";
+import { filtrosPadrao, porCanal, porFilial, resumir, ritmoDoMes, serieMensal } from "./lib/calculos";
 import { mesLongo } from "./lib/formatos";
 import { TODAS, TODOS, type Filtros, type Painel } from "./lib/tipos";
 
@@ -88,7 +83,7 @@ function Topo({ empresa }: { empresa: string }) {
 }
 
 function Conteudo({ painel }: { painel: Painel }) {
-  const [filtros, setFiltros] = useFiltrosNaUrl(painel);
+  const [filtros, setFiltros, aba, setAba] = useFiltrosNaUrl(painel);
   const atualizar = (parcial: Partial<Filtros>) => setFiltros({ ...filtros, ...parcial });
   const alternar = (campo: "filial" | "canal", valor: string, todos: string) =>
     atualizar({ [campo]: filtros[campo] === valor ? todos : valor });
@@ -98,9 +93,6 @@ function Conteudo({ painel }: { painel: Painel }) {
   const ritmo = useMemo(() => ritmoDoMes(painel, filtros, resumo), [painel, filtros, resumo]);
   const canais = useMemo(() => porCanal(painel, filtros), [painel, filtros]);
   const filiais = useMemo(() => porFilial(painel, filtros), [painel, filtros]);
-  const categorias = useMemo(() => porCategoria(painel, filtros), [painel, filtros]);
-  const produtos = useMemo(() => topProdutos(painel, filtros), [painel, filtros]);
-  const clientes = useMemo(() => topClientes(painel, filtros), [painel, filtros]);
 
   const recorte = [filtros.filial !== TODAS && filtros.filial, filtros.canal !== TODOS && filtros.canal].filter(Boolean).join(" · ");
   const padrao = filtrosPadrao(painel);
@@ -141,6 +133,10 @@ function Conteudo({ painel }: { painel: Painel }) {
         </p>
       </form>
 
+      <NavegacaoAbas ativa={aba} onTrocar={setAba} />
+
+      {aba === "geral" && (
+      <PainelAba id="geral">
       <Indicadores r={resumo} />
 
       <div className="grade">
@@ -170,16 +166,44 @@ function Conteudo({ painel }: { painel: Painel }) {
           onSelecionar={(nome) => alternar("canal", nome, TODOS)}
           rotuloValor="Líquido"
         />
-        <BarrasRanking className="col-4" titulo="Mix por categoria" subtitulo="Faturamento bruto" itens={categorias} rotuloValor="Bruto" />
-        <TabelaTop className="col-4" titulo="Produtos mais vendidos" subtitulo="Top 10 por faturamento bruto" linhas={produtos} rotuloExtra="Unid." />
-        <TabelaTop className="col-4" titulo="Maiores clientes" subtitulo="Top 8 por faturamento bruto" linhas={clientes} rotuloExtra="Notas" />
       </div>
+      </PainelAba>
+      )}
+      {aba === "produtos" && (
+        <PainelAba id="produtos">
+          <AbaProdutos painel={painel} filtros={filtros} />
+        </PainelAba>
+      )}
+      {aba === "clientes" && (
+        <PainelAba id="clientes">
+          <AbaClientes painel={painel} filtros={filtros} onSelecionarMes={(mes) => atualizar({ mes })} />
+        </PainelAba>
+      )}
+      {aba === "operacao" && (
+        <PainelAba id="operacao">
+          <AbaOperacao painel={painel} filtros={filtros} />
+        </PainelAba>
+      )}
+      {aba === "devolucoes" && (
+        <PainelAba id="devolucoes">
+          <AbaDevolucoes painel={painel} filtros={filtros} onSelecionarMes={(mes) => atualizar({ mes })} />
+        </PainelAba>
+      )}
+      {aba === "notas" && (
+        <PainelAba id="notas">
+          <AbaNotas painel={painel} filtros={filtros} />
+        </PainelAba>
+      )}
     </main>
   );
 }
 
-/** Filtros na query string, para compartilhar uma visão por link. */
+/** Filtros e aba na query string, para compartilhar uma visão por link. */
 function useFiltrosNaUrl(painel: Painel) {
+  const [aba, setAba] = useState<IdAba>(() => {
+    const valor = new URLSearchParams(window.location.search).get("aba");
+    return ABAS.some((a) => a.id === valor) ? (valor as IdAba) : "geral";
+  });
   const [filtros, setFiltros] = useState<Filtros>(() => {
     const p = new URLSearchParams(window.location.search);
     const padrao = filtrosPadrao(painel);
@@ -195,14 +219,15 @@ function useFiltrosNaUrl(painel: Painel) {
 
   useEffect(() => {
     const p = new URLSearchParams();
+    if (aba !== "geral") p.set("aba", aba);
     if (filtros.mes !== filtrosPadrao(painel).mes) p.set("mes", filtros.mes);
     if (filtros.filial !== TODAS) p.set("filial", filtros.filial);
     if (filtros.canal !== TODOS) p.set("canal", filtros.canal);
     const busca = p.toString();
     window.history.replaceState(null, "", busca ? `?${busca}` : window.location.pathname);
-  }, [filtros, painel]);
+  }, [filtros, painel, aba]);
 
-  return [filtros, setFiltros] as const;
+  return [filtros, setFiltros, aba, setAba] as const;
 }
 
 /** Tema claro/escuro: segue o sistema até a pessoa escolher; a escolha fica salva no navegador. */
